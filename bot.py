@@ -23,7 +23,7 @@ if not TOKEN:
 
 BETA_INFINITE_BALANCE = True
 
-OG_DROP_CHANCE = 100  # 0.0001%
+OG_DROP_CHANCE = 0.001  # 0.001%
 
 RESTOCK_SECONDS = 4 * 60 * 60
 
@@ -112,10 +112,10 @@ async def restock_loop():
 def main_menu():
     kb = InlineKeyboardBuilder()
 
-    kb.button(text="⭐ Кликнуть", callback_data="click")
-    kb.button(text="🛒 Магазин", callback_data="shop")
-    kb.button(text="🎟️ Промокоды", callback_data="promos")
-    kb.button(text="🛠️ Создать промокод", callback_data="create_promo")
+    kb.button(text="Кликнуть", callback_data="click")
+    kb.button(text="Магазин", callback_data="shop")
+    kb.button(text="Промокоды", callback_data="promos")
+    kb.button(text="Создать промокод", callback_data="create_promo")
 
     kb.adjust(1)
 
