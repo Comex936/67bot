@@ -16,28 +16,34 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from nfts import NFTS
 
 
-# =========================
+# =========================================================
 # НАСТРОЙКИ
-# =========================
+# =========================================================
 
 TOKEN = os.getenv("BOT_TOKEN")
 
 if not TOKEN:
-    raise RuntimeError("BOT_TOKEN не найден в Variables!")
+    raise RuntimeError(
+        "BOT_TOKEN не найден в Variables!"
+    )
 
-# Во время бета-теста баланс отображается как бесконечный.
+# Бета-тест
 BETA_INFINITE_BALANCE = True
 
+# В бета-тесте игрок сразу получает все NFT.
+BETA_ALL_NFTS = True
+
+# Шанс OG.
 # 0.0001% = 1 шанс из 1 000 000
 OG_DROP_CHANCE = 0.0001
 
-# Ресток каждые 4 часа.
+# Ресток магазина каждые 4 часа.
 RESTOCK_SECONDS = 4 * 60 * 60
 
 
-# =========================
+# =========================================================
 # ЛОГИ
-# =========================
+# =========================================================
 
 logging.basicConfig(
     level=logging.INFO,
@@ -45,73 +51,136 @@ logging.basicConfig(
 )
 
 
-# =========================
-# BOT / DISPATCHER
-# =========================
+# =========================================================
+# BOT
+# =========================================================
 
-bot = Bot(token=TOKEN)
+bot = Bot(
+    token=TOKEN
+)
 
 dp = Dispatcher(
     storage=MemoryStorage()
 )
 
 
-# =========================
-# ВРЕМЕННЫЕ ДАННЫЕ БЕТЫ
-# =========================
+# =========================================================
+# ВРЕМЕННЫЕ ДАННЫЕ
+# =========================================================
 
-# В будущем заменим это на БД.
+# Балансы игроков.
 balances = defaultdict(int)
 
 # Инвентарь игроков.
+#
+# user_id -> [nft_id, nft_id, ...]
+#
+# Если NFT получен несколько раз, он может находиться
+# в списке несколько раз.
 owned_nfts = defaultdict(list)
 
-# Текущий сток магазина.
+# Какой NFT сейчас активен.
+#
+# user_id -> nft_id
+equipped_nft = {}
+
+# Магазин.
 stock = {}
 
-# Созданные промокоды.
+# Промокоды.
 promo_codes = {}
 
-# Пользователи, которые уже активировали конкретный промокод.
+# Кто уже использовал промокод.
 #
-# Например:
-# {
-#     "STAR2026": {123456789, 987654321}
-# }
+# promo_code -> {user_id, user_id, ...}
 promo_users = defaultdict(set)
 
 
-# =========================
-# FSM СОЗДАНИЯ ПРОМОКОДА
-# =========================
+# =========================================================
+# FSM ПРОМОКОДОВ
+# =========================================================
 
 class PromoCreate(StatesGroup):
 
-    # Выбор типа награды.
     choosing_type = State()
 
-    # Выбор NFT.
     choosing_nft = State()
 
-    # Выбор количества активаций.
     choosing_activations = State()
 
-    # Ввод количества звёзд.
     entering_stars = State()
 
-    # Ввод названия промокода.
     entering_code = State()
 
-    # Подтверждение создания.
     confirmation = State()
 
-    # Ввод готового промокода пользователем.
     entering_promo = State()
 
 
-# =========================
+# =========================================================
+# БЕТА-ИНВЕНТАРЬ
+# =========================================================
+
+def initialize_beta_inventory(user_id: int):
+    """
+    В бета-тесте выдаём игроку все NFT из NFTS.
+    """
+
+    if not BETA_ALL_NFTS:
+        return
+
+    # Если уже выдавали — повторно не выдаём.
+    if owned_nfts[user_id]:
+        return
+
+    owned_nfts[user_id] = list(
+        NFTS.keys()
+    )
+
+
+def get_equipped_nft(user_id: int):
+    """
+    Возвращает активный NFT.
+    """
+
+    nft_id = equipped_nft.get(
+        user_id
+    )
+
+    if not nft_id:
+        return None
+
+    if nft_id not in NFTS:
+        equipped_nft.pop(
+            user_id,
+            None
+        )
+        return None
+
+    return NFTS[nft_id]
+
+
+def get_total_bonus(user_id: int):
+    """
+    Возвращает бонус активного NFT.
+    """
+
+    nft = get_equipped_nft(
+        user_id
+    )
+
+    if not nft:
+        return 0
+
+    return nft.get(
+        "bonus",
+        0
+    )
+
+
+# =========================================================
 # РЕСТОК
-# =========================
+# =========================================================
 
 def make_restock():
 
@@ -135,13 +204,21 @@ def make_restock():
     for nft_id in epic:
 
         if random.random() < 0.75:
-            stock[nft_id] = random.randint(1, 5)
+
+            stock[nft_id] = random.randint(
+                1,
+                5
+            )
 
     # Secret
     for nft_id in secret:
 
         if random.random() < 0.35:
-            stock[nft_id] = random.randint(1, 2)
+
+            stock[nft_id] = random.randint(
+                1,
+                2
+            )
 
 
 make_restock()
@@ -162,9 +239,9 @@ async def restock_loop():
         )
 
 
-# =========================
+# =========================================================
 # ГЛАВНОЕ МЕНЮ
-# =========================
+# =========================================================
 
 def main_menu():
 
@@ -173,6 +250,11 @@ def main_menu():
     kb.button(
         text="🖱 Кликнуть",
         callback_data="click"
+    )
+
+    kb.button(
+        text="🎒 Инвентарь",
+        callback_data="inventory"
     )
 
     kb.button(
@@ -195,9 +277,9 @@ def main_menu():
     return kb.as_markup()
 
 
-# =========================
+# =========================================================
 # МЕНЮ МАГАЗИНА
-# =========================
+# =========================================================
 
 def shop_menu():
 
@@ -240,9 +322,9 @@ def shop_menu():
     return kb.as_markup()
 
 
-# =========================
-# СПИСОК NFT
-# =========================
+# =========================================================
+# СПИСОК NFT МАГАЗИНА
+# =========================================================
 
 def nft_list_menu(rarity):
 
@@ -274,9 +356,9 @@ def nft_list_menu(rarity):
     return kb.as_markup()
 
 
-# =========================
+# =========================================================
 # КАРТОЧКА NFT
-# =========================
+# =========================================================
 
 def nft_card_menu(nft_id):
 
@@ -285,7 +367,10 @@ def nft_card_menu(nft_id):
     nft = NFTS[nft_id]
 
     kb.button(
-        text=f"⭐ {nft['price']:,}".replace(",", " "),
+        text=(
+            f"⭐ {nft['price']:,}"
+            .replace(",", " ")
+        ),
         callback_data=f"buy:{nft_id}"
     )
 
@@ -299,9 +384,9 @@ def nft_card_menu(nft_id):
     return kb.as_markup()
 
 
-# =========================
+# =========================================================
 # ПОДТВЕРЖДЕНИЕ ПОКУПКИ
-# =========================
+# =========================================================
 
 def confirm_menu(nft_id):
 
@@ -322,9 +407,9 @@ def confirm_menu(nft_id):
     return kb.as_markup()
 
 
-# =========================
+# =========================================================
 # МЕНЮ ТИПА ПРОМОКОДА
-# =========================
+# =========================================================
 
 def promo_type_menu():
 
@@ -350,9 +435,9 @@ def promo_type_menu():
     return kb.as_markup()
 
 
-# =========================
-# СПИСОК NFT ДЛЯ ПРОМОКОДА
-# =========================
+# =========================================================
+# NFT ДЛЯ ПРОМОКОДА
+# =========================================================
 
 def promo_nft_menu():
 
@@ -375,9 +460,9 @@ def promo_nft_menu():
     return kb.as_markup()
 
 
-# =========================
-# КОЛИЧЕСТВО АКТИВАЦИЙ
-# =========================
+# =========================================================
+# АКТИВАЦИИ ПРОМОКОДА
+# =========================================================
 
 def promo_activation_menu():
 
@@ -413,14 +498,19 @@ def promo_activation_menu():
         callback_data="promo_cancel"
     )
 
-    kb.adjust(2, 2, 1, 1)
+    kb.adjust(
+        2,
+        2,
+        1,
+        1
+    )
 
     return kb.as_markup()
 
 
-# =========================
+# =========================================================
 # ПОДТВЕРЖДЕНИЕ ПРОМОКОДА
-# =========================
+# =========================================================
 
 def promo_confirm_menu():
 
@@ -441,14 +531,72 @@ def promo_confirm_menu():
     return kb.as_markup()
 
 
-# =========================
-# СТАРТ
-# =========================
+# =========================================================
+# 🎒 ИНВЕНТАРЬ
+# =========================================================
+
+def inventory_menu(user_id):
+
+    kb = InlineKeyboardBuilder()
+
+    initialize_beta_inventory(
+        user_id
+    )
+
+    # Убираем дубликаты, но сохраняем порядок.
+    nft_ids = list(
+        dict.fromkeys(
+            owned_nfts[user_id]
+        )
+    )
+
+    for nft_id in nft_ids:
+
+        if nft_id not in NFTS:
+            continue
+
+        nft = NFTS[nft_id]
+
+        # Показываем, какой NFT активен.
+        if equipped_nft.get(user_id) == nft_id:
+
+            text = (
+                f"🟢 {nft['name']} "
+                f"— АКТИВЕН"
+            )
+
+        else:
+
+            text = nft["name"]
+
+        kb.button(
+            text=text,
+            callback_data=f"equip:{nft_id}"
+        )
+
+    kb.button(
+        text="◀️ Назад",
+        callback_data="back_main"
+    )
+
+    kb.adjust(1)
+
+    return kb.as_markup()
+
+
+# =========================================================
+# START
+# =========================================================
 
 @dp.message(CommandStart())
 async def start(message: Message):
 
     user_id = message.from_user.id
+
+    # Выдаём все NFT в бета-тесте.
+    initialize_beta_inventory(
+        user_id
+    )
 
     if BETA_INFINITE_BALANCE:
 
@@ -461,30 +609,189 @@ async def start(message: Message):
             .replace(",", " ")
         )
 
+    active_nft = get_equipped_nft(
+        user_id
+    )
+
+    if active_nft:
+
+        active_text = (
+            f"{active_nft['name']} "
+            f"(+{active_nft.get('bonus', 0)} ⭐/клик)"
+        )
+
+    else:
+
+        active_text = "Нет"
+
     await message.answer(
         "⭐ <b>Star Clicker</b>\n\n"
-        f"Ваш баланс: <b>{balance_text} ⭐</b>\n\n"
+        f"Ваш баланс: <b>{balance_text} ⭐</b>\n"
+        f"🎒 Активный NFT: <b>{active_text}</b>\n\n"
         "Добро пожаловать в бета-тест!",
         reply_markup=main_menu(),
         parse_mode="HTML"
     )
 
 
-# =========================
-# КЛИК
-# =========================
+# =========================================================
+# 🎒 ИНВЕНТАРЬ
+# =========================================================
 
-@dp.callback_query(F.data == "click")
-async def click(callback: CallbackQuery):
+@dp.callback_query(F.data == "inventory")
+async def inventory(
+    callback: CallbackQuery
+):
 
     user_id = callback.from_user.id
 
-    # Считаем клики даже при бесконечном балансе.
-    balances[user_id] += 1
+    initialize_beta_inventory(
+        user_id
+    )
 
-    # =========================
-    # ШАНС OG
-    # =========================
+    active_nft = get_equipped_nft(
+        user_id
+    )
+
+    if active_nft:
+
+        active_text = (
+            f"🟢 <b>{active_nft['name']}</b>\n"
+            f"⚡ Бонус: "
+            f"<b>+{active_nft.get('bonus', 0)} ⭐/клик</b>"
+        )
+
+    else:
+
+        active_text = (
+            "🔴 <b>Нет активного NFT</b>"
+        )
+
+    nft_count = len(
+        set(
+            owned_nfts[user_id]
+        )
+    )
+
+    await callback.message.edit_text(
+        "🎒 <b>ИНВЕНТАРЬ</b>\n\n"
+        f"Всего NFT: <b>{nft_count}</b>\n\n"
+        "Активный NFT:\n"
+        f"{active_text}\n\n"
+        "👇 Нажмите на NFT, чтобы "
+        "сразу применить его:",
+        reply_markup=inventory_menu(
+            user_id
+        ),
+        parse_mode="HTML"
+    )
+
+    await callback.answer()
+
+
+# =========================================================
+# ПРИМЕНЕНИЕ NFT
+# =========================================================
+
+@dp.callback_query(
+    F.data.startswith("equip:")
+)
+async def equip_nft(
+    callback: CallbackQuery
+):
+
+    user_id = callback.from_user.id
+
+    nft_id = callback.data.split(
+        ":",
+        1
+    )[1]
+
+    initialize_beta_inventory(
+        user_id
+    )
+
+    # Проверяем существование NFT.
+    if nft_id not in NFTS:
+
+        await callback.answer(
+            "❌ NFT не найден!",
+            show_alert=True
+        )
+
+        return
+
+    # Проверяем наличие NFT в инвентаре.
+    if nft_id not in owned_nfts[user_id]:
+
+        await callback.answer(
+            "❌ У вас нет этого NFT!",
+            show_alert=True
+        )
+
+        return
+
+    nft = NFTS[nft_id]
+
+    # Если он уже активен.
+    if equipped_nft.get(user_id) == nft_id:
+
+        await callback.answer(
+            "Этот NFT уже активен!"
+        )
+
+        return
+
+    # Применяем NFT.
+    equipped_nft[user_id] = nft_id
+
+    await callback.message.edit_text(
+        "✅ <b>NFT применён!</b>\n\n"
+        f"🎁 <b>{nft['name']}</b>\n"
+        f"🟣 Редкость: <b>{nft['rarity']}</b>\n"
+        f"⚡ Бонус: "
+        f"<b>+{nft.get('bonus', 0)} ⭐/клик</b>\n\n"
+        "Теперь этот NFT активен.",
+        reply_markup=inventory_menu(
+            user_id
+        ),
+        parse_mode="HTML"
+    )
+
+    await callback.answer(
+        "NFT применён!"
+    )
+
+
+# =========================================================
+# 🖱 КЛИК
+# =========================================================
+
+@dp.callback_query(F.data == "click")
+async def click(
+    callback: CallbackQuery
+):
+
+    user_id = callback.from_user.id
+
+    # В бета-тесте выдаём все NFT.
+    initialize_beta_inventory(
+        user_id
+    )
+
+    # Получаем бонус активного NFT.
+    bonus = get_total_bonus(
+        user_id
+    )
+
+    # Базовый клик + бонус NFT.
+    click_reward = 1 + bonus
+
+    balances[user_id] += click_reward
+
+    # =====================================================
+    # OG DROP
+    # =====================================================
 
     if random.random() < OG_DROP_CHANCE / 100:
 
@@ -519,16 +826,18 @@ async def click(callback: CallbackQuery):
             )
 
     await callback.answer(
-        "+1 ⭐"
+        f"+{click_reward} ⭐"
     )
 
 
-# =========================
-# МАГАЗИН
-# =========================
+# =========================================================
+# 🛒 МАГАЗИН
+# =========================================================
 
 @dp.callback_query(F.data == "shop")
-async def shop(callback: CallbackQuery):
+async def shop(
+    callback: CallbackQuery
+):
 
     epic_count = sum(
         amount
@@ -547,7 +856,8 @@ async def shop(callback: CallbackQuery):
         "Сейчас в маркете:\n"
         f"🟣 Epic — <b>{epic_count}</b>\n"
         f"🟪 Secret — <b>{secret_count}</b>\n\n"
-        "⏰ Следующий ресток через <b>4 часа</b>",
+        "⏰ Следующий ресток через "
+        "<b>4 часа</b>",
         reply_markup=shop_menu(),
         parse_mode="HTML"
     )
@@ -555,12 +865,14 @@ async def shop(callback: CallbackQuery):
     await callback.answer()
 
 
-# =========================
+# =========================================================
 # EPIC
-# =========================
+# =========================================================
 
 @dp.callback_query(F.data == "shop_epic")
-async def shop_epic(callback: CallbackQuery):
+async def shop_epic(
+    callback: CallbackQuery
+):
 
     available = [
         nft_id
@@ -593,12 +905,14 @@ async def shop_epic(callback: CallbackQuery):
     await callback.answer()
 
 
-# =========================
+# =========================================================
 # SECRET
-# =========================
+# =========================================================
 
 @dp.callback_query(F.data == "shop_secret")
-async def shop_secret(callback: CallbackQuery):
+async def shop_secret(
+    callback: CallbackQuery
+):
 
     available = [
         nft_id
@@ -631,15 +945,18 @@ async def shop_secret(callback: CallbackQuery):
     await callback.answer()
 
 
-# =========================
+# =========================================================
 # КАРТОЧКА NFT
-# =========================
+# =========================================================
 
 @dp.callback_query(F.data.startswith("nft:"))
-async def nft_card(callback: CallbackQuery):
+async def nft_card(
+    callback: CallbackQuery
+):
 
     nft_id = callback.data.split(
-        ":", 1
+        ":",
+        1
     )[1]
 
     if nft_id not in NFTS:
@@ -668,7 +985,8 @@ async def nft_card(callback: CallbackQuery):
         f"<b>{nft['name']}</b>\n\n"
         f"Редкость: <b>{nft['rarity']}</b>\n"
         f"📦 Сейчас в стоке: <b>{current_stock}</b>\n"
-        f"⚡ Бонус: <b>+{nft['bonus']} ⭐/клик</b>",
+        f"⚡ Бонус: "
+        f"<b>+{nft.get('bonus', 0)} ⭐/клик</b>",
         reply_markup=nft_card_menu(nft_id),
         parse_mode="HTML"
     )
@@ -676,12 +994,14 @@ async def nft_card(callback: CallbackQuery):
     await callback.answer()
 
 
-# =========================
+# =========================================================
 # ПОКУПКА
-# =========================
+# =========================================================
 
 @dp.callback_query(F.data.startswith("buy:"))
-async def buy_nft(callback: CallbackQuery):
+async def buy_nft(
+    callback: CallbackQuery
+):
 
     nft_id = callback.data.split(
         ":",
@@ -715,12 +1035,14 @@ async def buy_nft(callback: CallbackQuery):
     await callback.answer()
 
 
-# =========================
+# =========================================================
 # ПОДТВЕРЖДЕНИЕ ПОКУПКИ
-# =========================
+# =========================================================
 
 @dp.callback_query(F.data.startswith("confirm:"))
-async def confirm_buy(callback: CallbackQuery):
+async def confirm_buy(
+    callback: CallbackQuery
+):
 
     user_id = callback.from_user.id
 
@@ -761,8 +1083,6 @@ async def confirm_buy(callback: CallbackQuery):
 
         return
 
-    # Реальная проверка баланса будет использоваться
-    # после окончания бета-теста.
     if not BETA_INFINITE_BALANCE:
 
         if balances[user_id] < nft["price"]:
@@ -770,8 +1090,10 @@ async def confirm_buy(callback: CallbackQuery):
             await callback.message.edit_text(
                 "❌ <b>У вас недостаточно звёзд "
                 "для покупки данного NFT.</b>\n\n"
-                f"⭐ Баланс: <b>{balances[user_id]}</b>\n"
-                f"💎 Стоимость NFT: <b>{nft['price']}</b>",
+                f"⭐ Баланс: "
+                f"<b>{balances[user_id]}</b>\n"
+                f"💎 Стоимость NFT: "
+                f"<b>{nft['price']}</b>",
                 parse_mode="HTML"
             )
 
@@ -782,7 +1104,7 @@ async def confirm_buy(callback: CallbackQuery):
     # Уменьшаем сток.
     stock[nft_id] -= 1
 
-    # Выдаём NFT.
+    # Добавляем NFT.
     owned_nfts[user_id].append(
         nft_id
     )
@@ -791,7 +1113,8 @@ async def confirm_buy(callback: CallbackQuery):
         "✅ <b>Покупка успешно совершена!</b>\n\n"
         f"🎁 NFT: <b>{nft['name']}</b>\n"
         f"🟣 Редкость: <b>{nft['rarity']}</b>\n"
-        f"⚡ Бонус: <b>+{nft['bonus']} ⭐/клик</b>",
+        f"⚡ Бонус: "
+        f"<b>+{nft.get('bonus', 0)} ⭐/клик</b>",
         reply_markup=shop_menu(),
         parse_mode="HTML"
     )
@@ -805,12 +1128,14 @@ async def confirm_buy(callback: CallbackQuery):
     )
 
 
-# =========================
-# НАЗАД В ГЛАВНОЕ МЕНЮ
-# =========================
+# =========================================================
+# НАЗАД
+# =========================================================
 
 @dp.callback_query(F.data == "back_main")
-async def back_main(callback: CallbackQuery):
+async def back_main(
+    callback: CallbackQuery
+):
 
     user_id = callback.from_user.id
 
@@ -824,9 +1149,25 @@ async def back_main(callback: CallbackQuery):
             balances[user_id]
         )
 
+    active_nft = get_equipped_nft(
+        user_id
+    )
+
+    if active_nft:
+
+        active_text = (
+            f"{active_nft['name']} "
+            f"(+{active_nft.get('bonus', 0)} ⭐/клик)"
+        )
+
+    else:
+
+        active_text = "Нет"
+
     await callback.message.edit_text(
         "⭐ <b>Star Clicker</b>\n\n"
-        f"Ваш баланс: <b>{balance_text} ⭐</b>",
+        f"Ваш баланс: <b>{balance_text} ⭐</b>\n"
+        f"🎒 Активный NFT: <b>{active_text}</b>",
         reply_markup=main_menu(),
         parse_mode="HTML"
     )
@@ -834,9 +1175,9 @@ async def back_main(callback: CallbackQuery):
     await callback.answer()
 
 
-# =========================
+# =========================================================
 # НАЗАД К СПИСКУ NFT
-# =========================
+# =========================================================
 
 @dp.callback_query(F.data.startswith("list:"))
 async def back_to_list(
@@ -864,22 +1205,24 @@ async def back_to_list(
     await callback.answer()
 
 
-# =========================
+# =========================================================
 # OG INFO
-# =========================
+# =========================================================
 
 @dp.callback_query(F.data == "og_info")
-async def og_info(callback: CallbackQuery):
+async def og_info(
+    callback: CallbackQuery
+):
 
     await callback.message.edit_text(
         "👑 <b>Как получить OG-NFT?</b>\n\n"
-        "Чтобы получить OG-NFT, вам нужна удача "
-        "или специальный промокод.\n\n"
+        "Чтобы получить OG-NFT, вам нужна "
+        "удача или специальный промокод.\n\n"
         "🎲 С шансом <b>0.0001%</b> при клике "
         "у вас может появиться сообщение "
         "с получением NFT.\n\n"
-        "🎟️ Второй способ — получить специальный "
-        "промокод.",
+        "🎟️ Второй способ — получить "
+        "специальный промокод.",
         reply_markup=shop_menu(),
         parse_mode="HTML"
     )
@@ -892,7 +1235,9 @@ async def og_info(callback: CallbackQuery):
 # =========================================================
 
 @dp.callback_query(F.data == "promos")
-async def promos(callback: CallbackQuery):
+async def promos(
+    callback: CallbackQuery
+):
 
     kb = InlineKeyboardBuilder()
 
@@ -910,7 +1255,8 @@ async def promos(callback: CallbackQuery):
 
     await callback.message.edit_text(
         "🎟️ <b>ПРОМОКОДЫ</b>\n\n"
-        "Введите промокод, чтобы получить награду.",
+        "Введите промокод, чтобы получить "
+        "награду.",
         reply_markup=kb.as_markup(),
         parse_mode="HTML"
     )
@@ -945,9 +1291,9 @@ async def create_promo(
     await callback.answer()
 
 
-# =========================
-# NFT
-# =========================
+# =========================================================
+# ПРОМОКОД NFT
+# =========================================================
 
 @dp.callback_query(
     PromoCreate.choosing_type,
@@ -977,9 +1323,9 @@ async def promo_choose_nft(
     await callback.answer()
 
 
-# =========================
-# ЗВЁЗДЫ
-# =========================
+# =========================================================
+# ПРОМОКОД ЗВЁЗДЫ
+# =========================================================
 
 @dp.callback_query(
     PromoCreate.choosing_type,
@@ -1011,9 +1357,9 @@ async def promo_choose_stars(
     await callback.answer()
 
 
-# =========================
-# ВЫБОР NFT
-# =========================
+# =========================================================
+# NFT ПРОМОКОДА
+# =========================================================
 
 @dp.callback_query(
     PromoCreate.choosing_nft,
@@ -1060,9 +1406,9 @@ async def promo_nft_selected(
     await callback.answer()
 
 
-# =========================
+# =========================================================
 # КОЛИЧЕСТВО ЗВЁЗД
-# =========================
+# =========================================================
 
 @dp.message(PromoCreate.entering_stars)
 async def promo_stars_entered(
@@ -1129,9 +1475,9 @@ async def promo_stars_entered(
     )
 
 
-# =========================
-# ВЫБОР АКТИВАЦИЙ
-# =========================
+# =========================================================
+# АКТИВАЦИИ
+# =========================================================
 
 @dp.callback_query(
     PromoCreate.choosing_activations,
@@ -1150,11 +1496,17 @@ async def promo_activations_selected(
     if value == "infinite":
 
         activations = "infinite"
-        activation_text = "Бесконечно"
+
+        activation_text = (
+            "Бесконечно"
+        )
 
     else:
 
-        activations = int(value)
+        activations = int(
+            value
+        )
+
         activation_text = str(
             activations
         )
@@ -1180,9 +1532,9 @@ async def promo_activations_selected(
     await callback.answer()
 
 
-# =========================
-# ВВОД ПРОМОКОДА
-# =========================
+# =========================================================
+# ВВОД КОДА
+# =========================================================
 
 @dp.message(PromoCreate.entering_code)
 async def promo_code_entered(
@@ -1193,26 +1545,26 @@ async def promo_code_entered(
     if not message.text:
 
         await message.answer(
-            "❌ Пожалуйста, напишите промокод текстом."
+            "❌ Пожалуйста, напишите промокод."
         )
 
         return
 
     code = message.text.strip()
 
-    # Только английские буквы и цифры.
+    # Только ASCII буквы и цифры.
     if not code.isascii() or not code.isalnum():
 
         await message.answer(
-            "❌ Промокод должен содержать только "
-            "английские буквы и цифры.\n\n"
+            "❌ Промокод должен содержать "
+            "только английские буквы и цифры.\n\n"
             "Например: <code>STAR2026</code>",
             parse_mode="HTML"
         )
 
         return
 
-    # Не даём создать одинаковый код.
+    # Проверяем существование.
     if code.lower() in (
         existing_code.lower()
         for existing_code in promo_codes
@@ -1235,7 +1587,6 @@ async def promo_code_entered(
         PromoCreate.confirmation
     )
 
-    # Текст награды.
     if data["reward_type"] == "NFT":
 
         reward_text = data["nft_name"]
@@ -1253,7 +1604,8 @@ async def promo_code_entered(
         "промокода?</b>\n\n"
         "📋 <b>Данные:</b>\n\n"
         f"🏷 Название: <code>{code}</code>\n"
-        f"🎁 На что промокод: <b>{reward_text}</b>\n"
+        f"🎁 На что промокод: "
+        f"<b>{reward_text}</b>\n"
         f"🔢 На сколько активаций: "
         f"<b>{data['activation_text']}</b>",
         reply_markup=promo_confirm_menu(),
@@ -1261,9 +1613,9 @@ async def promo_code_entered(
     )
 
 
-# =========================
-# ПОДТВЕРЖДЕНИЕ СОЗДАНИЯ
-# =========================
+# =========================================================
+# СОЗДАНИЕ ПРОМОКОДА
+# =========================================================
 
 @dp.callback_query(
     PromoCreate.confirmation,
@@ -1279,7 +1631,7 @@ async def promo_confirm(
     code = data["code"]
 
     # -------------------------
-    # ПРОМОКОД НА ЗВЁЗДЫ
+    # ЗВЁЗДЫ
     # -------------------------
 
     if data["reward_type"] == "STARS":
@@ -1299,7 +1651,7 @@ async def promo_confirm(
         )
 
     # -------------------------
-    # ПРОМОКОД НА NFT
+    # NFT
     # -------------------------
 
     else:
@@ -1330,9 +1682,9 @@ async def promo_confirm(
     )
 
 
-# =========================
+# =========================================================
 # ОТМЕНА СОЗДАНИЯ
-# =========================
+# =========================================================
 
 @dp.callback_query(
     F.data == "promo_cancel"
@@ -1354,7 +1706,7 @@ async def promo_cancel(
 
 
 # =========================================================
-# АКТИВАЦИЯ ПРОМОКОДА
+# ВВОД ПРОМОКОДА
 # =========================================================
 
 @dp.callback_query(F.data == "enter_promo")
@@ -1378,9 +1730,9 @@ async def enter_promo(
     await callback.answer()
 
 
-# =========================
-# ОБРАБОТКА ПРОМОКОДА
-# =========================
+# =========================================================
+# АКТИВАЦИЯ ПРОМОКОДА
+# =========================================================
 
 @dp.message(PromoCreate.entering_promo)
 async def activate_promo(
@@ -1398,7 +1750,7 @@ async def activate_promo(
 
     code = message.text.strip()
 
-    # Ищем код без учёта регистра.
+    # Поиск без учёта регистра.
     real_code = next(
         (
             promo_code
@@ -1407,10 +1759,6 @@ async def activate_promo(
         ),
         None
     )
-
-    # -------------------------
-    # КОД НЕ НАЙДЕН
-    # -------------------------
 
     if real_code is None:
 
@@ -1426,10 +1774,7 @@ async def activate_promo(
 
     user_id = message.from_user.id
 
-    # -------------------------
-    # ПОВТОРНАЯ АКТИВАЦИЯ
-    # -------------------------
-
+    # Уже использовал.
     if user_id in promo_users[real_code]:
 
         await message.answer(
@@ -1442,10 +1787,7 @@ async def activate_promo(
 
         return
 
-    # -------------------------
-    # ПРОВЕРКА ЛИМИТА
-    # -------------------------
-
+    # Проверка количества активаций.
     if promo["activations"] != "infinite":
 
         if promo["used"] >= promo["activations"]:
@@ -1460,10 +1802,7 @@ async def activate_promo(
 
             return
 
-    # -------------------------
-    # ЗАСЧИТЫВАЕМ АКТИВАЦИЮ
-    # -------------------------
-
+    # Засчитываем использование.
     promo_users[real_code].add(
         user_id
     )
@@ -1473,7 +1812,7 @@ async def activate_promo(
         promo["used"] += 1
 
     # =====================================================
-    # НАГРАДА: ЗВЁЗДЫ
+    # ЗВЁЗДЫ
     # =====================================================
 
     if promo["type"] == "STARS":
@@ -1488,7 +1827,7 @@ async def activate_promo(
         )
 
     # =====================================================
-    # НАГРАДА: NFT
+    # NFT
     # =====================================================
 
     elif promo["type"] == "NFT":
@@ -1497,8 +1836,6 @@ async def activate_promo(
 
         if nft_id not in NFTS:
 
-            # Откатываем использование,
-            # если NFT больше нет.
             promo_users[real_code].discard(
                 user_id
             )
@@ -1529,10 +1866,6 @@ async def activate_promo(
             f"🎁 {nft['name']}"
         )
 
-    # =====================================================
-    # НЕИЗВЕСТНЫЙ ТИП
-    # =====================================================
-
     else:
 
         promo_users[real_code].discard(
@@ -1550,13 +1883,15 @@ async def activate_promo(
 
         return
 
-    # -------------------------
-    # ТЕКСТ АКТИВАЦИЙ
-    # -------------------------
+    # =====================================================
+    # ТЕКСТ
+    # =====================================================
 
     if promo["activations"] == "infinite":
 
-        activation_text = "♾ Бесконечно"
+        activation_text = (
+            "♾ Бесконечно"
+        )
 
     else:
 
@@ -1568,16 +1903,17 @@ async def activate_promo(
     await message.answer(
         "🎉 <b>Промокод успешно активирован!</b>\n\n"
         f"🎁 Награда: <b>{reward_text}</b>\n"
-        f"🎟 Активации: <b>{activation_text}</b>",
+        f"🎟 Активации: "
+        f"<b>{activation_text}</b>",
         parse_mode="HTML"
     )
 
     await state.clear()
 
 
-# =========================
+# =========================================================
 # ЗАПУСК
-# =========================
+# =========================================================
 
 async def main():
 
@@ -1589,8 +1925,13 @@ async def main():
         restock_loop()
     )
 
-    await dp.start_polling(bot)
+    await dp.start_polling(
+        bot
+    )
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+
+    asyncio.run(
+        main()
+    )
