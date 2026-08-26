@@ -109,34 +109,32 @@ NFTS = {
         "price": None,
         "bonus": 300,
         "file_id": "CAACAgIAAxkBAAMLao9VWWpxFRbNTCz9noEp12sIlFgAAmaCAALt1IFLPE_gTvoWqrs9BA",
-    
     },
-  
+
     "friend_status": {
-       "name": "Bro Status",
-       "rarity": "Friend",
-       "price": None,
-       "bonus": None,
-       "file_id": "CAACAgIAAxkBAAMRao9rsp3g_4tLLxwpAqTrY92IC-0AAj1dAAKvTlBIILpFftrv9-I9BA",
-
+        "name": "Bro Status",
+        "rarity": "Friend",
+        "price": None,
+        "bonus": 750,
+        "file_id": "CAACAgIAAxkBAAMRao9rsp3g_4tLLxwpAqTrY92IC-0AAj1dAAKvTlBIILpFftrv9-I9BA",
     },
 
-        "laser_pepe_sword": {
-       "name": "Laser Pepe Sword",
-       "rarity": "Epic",
-       "price": 100,
-       "bonus": 10,
-       "file_id": "CAACAgIAAxkBAAMTao9tIDF6eY5mdMaroNT1yogqk1cAAs1gAALWtUBKAr7-zL19hM49BA",
-   
-        },
-            "laser_sword": {
-           "name": "Laser Sword",
-           "rarity": "Legendary",
-           "price": 350,
-           "bonus": 30,
-         "file_id": "CAACAgIAAxkBAAMVao9ua8sIgODua8LpR2cgqPZq2yQAArVcAALwmBFICiklGrcyDvc9A",
-   },
-  
+    "laser_pepe_sword": {
+        "name": "Laser Pepe Sword",
+        "rarity": "Epic",
+        "price": 100,
+        "bonus": 10,
+        "file_id": "CAACAgIAAxkBAAMTao9tIDF6eY5mdMaroNT1yogqk1cAAs1gAALWtUBKAr7-zL19hM49BA",
+    },
+
+    "laser_sword": {
+        "name": "Laser Sword",
+        "rarity": "Legendary",
+        "price": 350,
+        "bonus": 30,
+        "file_id": "CAACAgIAAxkBAAMVao9ua8sIgODua8LpR2cgqPZq2yQAArVcAALwmBFICiklGrcyDvc9A",
+    },
+
     "messi": {
         "name": "Messi Tedy",
         "rarity": "Legendary",
@@ -149,9 +147,7 @@ NFTS = {
         "name": "Jason Mask",
         "rarity": "OG",
         "price": None,
-        "bonus": 250
+        "bonus": 250,
         "file_id": "CAACAgIAAxkBAAMbao9xzXd7ncqA9EitIe2rs5ft6TEAAoB_AAJmIylIAgQ7UL14rlk9BA",
     },
 }
-        
-        
