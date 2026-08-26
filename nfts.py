@@ -86,4 +86,27 @@ NFTS = {
         "bonus": 50,
         "file_id": "CAACAgIAAxkBAAM1ao8UXDUKWAW_BePJ89Oua2A2CfEAAmWAAALNSnlJbrm4AqShmeI9BA",
     },
-}
+
+"duck_pepe": {
+    "name": "Duck Pepe",
+    "rarity": "Legendary",
+    "price": 1000,
+    "bonus": 30
+    "file_id": "CAACAgIAAxkBAAMFao9SLP8_hjTANxK_nWbFYZxR6GgAAkR4AAKkgghL-3xHxxs2h3Q9BA"
+},
+
+    "girl_pepe"
+    "name": "Girl Duck",
+    "rarity": "Secret",
+    "price": 8000
+    "bonus": 30
+"file_id": "CAACAgIAAxkBAAMHao9SO0FbQoVZm499k66uLJLGqWUAAsNwAAKOgwhLV_ZAeayk-5E9BA"
+},
+
+    "cigarette"
+"name": "Cigarette",
+"rarity": "OG"
+"price": None,
+"bonus": 300
+"file_id": "CAACAgIAAxkBAAMLao9VWWpxFRbNTCz9noEp12sIlFgAAmaCAALt1IFLPE_gTvoWqrs9BA"
+},
